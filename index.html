@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>實驗室網頁載入中...</title>
+    <title>能源與流體應用實驗室</title>
     <!-- 引入 Tailwind CSS (負責排版) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 Lucide Icons (負責圖示) -->
@@ -26,7 +26,7 @@
                 <!-- LOGO -->
                 <div class="font-bold text-xl cursor-pointer flex items-center gap-2" onclick="renderPage('home')">
                     <i data-lucide="users" class="text-blue-400"></i>
-                    <span id="nav-lab-name" class="hidden sm:block">載入中...</span>
+                    <span id="nav-lab-name" class="hidden sm:block">Loading...</span>
                     <span class="sm:hidden">Lab</span>
                 </div>
 
@@ -147,7 +147,7 @@
                 renderPage('home');
 
             } catch (err) {
-                document.getElementById('app-container').innerHTML = `<div class="text-center text-red-500 p-10">資料載入失敗：${err.message}<br>請確認 CSV 檔案是否已上傳至 data/ 資料夾。</div>`;
+                document.getElementById('app-container').innerHTML = `<div class="text-center text-red-500 p-10">資料載入失敗：${err.message}<br>如多次失敗請聯繫管理員</div>`;
             }
         }
 
