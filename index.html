@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>實驗室網頁載入中...</title>
+    <!-- 引入 Tailwind CSS (負責排版) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide Icons (負責圖示) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 自訂動畫樣式 -->
+    <style>
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* 隱藏滾動條但保持功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-slate-800 flex flex-col min-h-screen">
+
+    <!-- 導覽列 -->
+    <nav class="bg-slate-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <!-- LOGO -->
+                <div class="font-bold text-xl cursor-pointer flex items-center gap-2" onclick="renderPage('home')">
+                    <i data-lucide="users" class="text-blue-400"></i>
+                    <span id="nav-lab-name" class="hidden sm:block">載入中...</span>
+                    <span class="sm:hidden">Lab</span>
+                </div>
+
+                <!-- 電腦版選單 -->
+                <div class="hidden md:flex space-x-8">
+                    <button onclick="renderPage('home')" class="nav-btn hover:text-blue-400 text-gray-300" data-page="home">首頁</button>
+                    <button onclick="renderPage('professor')" class="nav-btn hover:text-blue-400 text-gray-300" data-page="professor">主持人簡介</button>
+                    <button onclick="renderPage('research')" class="nav-btn hover:text-blue-400 text-gray-300" data-page="research">研究成果</button>
+                </div>
+
+                <!-- 手機版選單按鈕 -->
+                <div class="md:hidden">
+                    <button onclick="toggleMenu()" class="p-2">
+                        <i data-lucide="menu"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- 手機版下拉選單 -->
+        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 pb-4">
+            <button onclick="renderPage('home'); toggleMenu()" class="block w-full text-left px-4 py-2 text-gray-300 hover:bg-slate-700">首頁</button>
+            <button onclick="renderPage('professor'); toggleMenu()" class="block w-full text-left px-4 py-2 text-gray-300 hover:bg-slate-700">主持人簡介</button>
+            <button onclick="renderPage('research'); toggleMenu()" class="block w-full text-left px-4 py-2 text-gray-300 hover:bg-slate-700">研究成果</button>
+        </div>
+    </nav>
+
+    <!-- 主要內容區 -->
+    <main id="app-container" class="flex-grow min-h-[500px]">
+        <!-- 內容將由 JavaScript 動態插入 -->
+        <div class="flex justify-center items-center h-64">
+            <div class="text-center">
+                <div class="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-blue-600 rounded-full" role="status"></div>
+                <p class="mt-2 text-gray-500">正在讀取資料...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- 頁尾 -->
+    <footer class="bg-slate-900 text-gray-400 py-8 mt-12">
+        <div class="max-w-6xl mx-auto px-4 text-center">
+            <p id="footer-name" class="font-bold text-white text-lg mb-2"></p>
+            <p id="footer-eng" class="text-sm mb-4"></p>
+            <div class="flex justify-center gap-6 text-sm flex-wrap">
+                <p id="footer-loc"></p>
+                <p id="footer-tel"></p>
+            </div>
+            <p class="text-xs text-gray-600 mt-6">© <span id="year"></span> All Rights Reserved. Powered by GitHub Pages.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript 邏輯區 -->
+    <script>
+        // ================= 設定與工具 =================
+        const DATA_SOURCES = {
+            info: 'data/info.csv',
+            professor: 'data/professor.csv',
+            education: 'data/education.csv',
+            experience_main: 'data/experience_main.csv',
+            experience_related: 'data/experience_related.csv',
+            honors: 'data/honors.csv',
+            patents: 'data/patents.csv',
+            conference_intl: 'data/conference_intl.csv',
+            conference_dom: 'data/conference_dom.csv',
+            projects: 'data/projects.csv',
+            activity_photos: 'data/activity_photos.csv'
+        };
+
+        let labData = {}; // 儲存所有資料
+
+        // CSV 解析器
+        function parseCSV(text) {
+            const lines = text.trim().split(/\r\n|\n/);
+            if (lines.length < 2) return [];
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const pattern = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/; // 處理引號內的逗號
+
+            return lines.slice(1).map(line => {
+                if (!line.trim()) return null;
+                const values = line.split(pattern).map(val => val ? val.trim().replace(/^"|"$/g, '').replace(/""/g, '"') : '');
+                return headers.reduce((obj, header, index) => {
+                    obj[header] = values[index] || '';
+                    return obj;
+                }, {});
+            }).filter(item => item !== null);
+        }
+
+        // ================= 資料讀取 =================
+        async function initApp() {
+            try {
+                const promises = Object.entries(DATA_SOURCES).map(async ([key, url]) => {
+                    try {
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error(`Missing ${url}`);
+                        const text = await res.text();
+                        const data = parseCSV(text);
+                        return { key, data: (key === 'info' || key === 'professor') ? (data[0] || {}) : data };
+                    } catch (err) {
+                        console.warn(err);
+                        return { key, data: (key === 'info' || key === 'professor') ? {} : [] };
+                    }
+                });
+
+                const results = await Promise.all(promises);
+                results.forEach(({ key, data }) => labData[key] = data);
+
+                // 資料預處理
+                labData.professor.image = labData.professor.image_filename 
+                    ? `photos/prof/${labData.professor.image_filename}` 
+                    : 'https://placehold.co/400x400?text=No+Image';
+
+                if (labData.activity_photos) {
+                    labData.activity_photos.forEach(p => {
+                        p.url = `photos/activity/${p.filename}`;
+                    });
+                }
+
+                updateGlobalUI();
+                renderPage('home');
+
+            } catch (err) {
+                document.getElementById('app-container').innerHTML = `<div class="text-center text-red-500 p-10">資料載入失敗：${err.message}<br>請確認 CSV 檔案是否已上傳至 data/ 資料夾。</div>`;
+            }
+        }
+
+        function updateGlobalUI() {
+            document.title = labData.info.name || "實驗室網頁";
+            document.getElementById('nav-lab-name').textContent = labData.info.name || "My Lab";
+            document.getElementById('footer-name').textContent = labData.info.name;
+            document.getElementById('footer-eng').textContent = labData.info.englishName;
+            document.getElementById('footer-loc').textContent = labData.info.location;
+            document.getElementById('footer-tel').textContent = `Tel: ${labData.info.phone}`;
+            document.getElementById('year').textContent = new Date().getFullYear();
+        }
+
+        // ================= 頁面渲染邏輯 =================
+        function renderPage(pageName) {
+            const container = document.getElementById('app-container');
+            let html = '';
+
+            // 更新導覽列狀態
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                if (btn.dataset.page === pageName) {
+                    btn.classList.add('text-blue-400', 'font-bold');
+                    btn.classList.remove('text-gray-300');
+                } else {
+                    btn.classList.remove('text-blue-400', 'font-bold');
+                    btn.classList.add('text-gray-300');
+                }
+            });
+
+            if (pageName === 'home') html = renderHome();
+            else if (pageName === 'professor') html = renderProfessor();
+            else if (pageName === 'research') html = renderResearch('projects'); // 預設顯示研究計畫
+
+            container.innerHTML = html;
+            lucide.createIcons(); // 重新繪製圖示
+            window.scrollTo(0, 0);
+        }
+
+        function toggleMenu() {
+            const menu = document.getElementById('mobile-menu');
+            menu.classList.toggle('hidden');
+        }
+
+        // --- 首頁 ---
+        function renderHome() {
+            // 取得最新消息邏輯
+            const allNews = [
+                ...(labData.honors || []).map(i => ({...i, type: '榮譽', style: 'bg-yellow-100 text-yellow-700'})),
+                ...(labData.patents || []).map(i => ({...i, type: '專利', style: 'bg-purple-100 text-purple-700'})),
+                ...(labData.projects || []).map(i => ({...i, type: '計畫', style: 'bg-green-100 text-green-700'})),
+                ...(labData.conference_intl || []).map(i => ({...i, type: '研討會', style: 'bg-blue-100 text-blue-700'}))
+            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
+
+            const newsHTML = allNews.length > 0 ? allNews.map(item => `
+                <div class="border-l-2 border-gray-200 pl-4 py-2 hover:border-blue-400 transition-colors">
+                    <span class="${item.style} text-xs font-bold px-2 py-0.5 rounded-full mb-1 inline-block">${item.type}</span>
+                    <p class="text-gray-500 text-xs mb-1">${item.date}</p>
+                    <p class="text-slate-700 font-medium text-sm leading-snug hover:text-blue-600 cursor-pointer">${item.title}</p>
+                </div>
+            `).join('') : '<div class="text-gray-500 text-center">暫無最新消息</div>';
+
+            const photosHTML = (labData.activity_photos || []).map(p => `
+                <div class="group relative overflow-hidden rounded-lg shadow-md aspect-video">
+                    <img src="${p.url}" onerror="this.src='https://placehold.co/800x400?text=Photo+Missing'" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                    <div class="absolute bottom-0 left-0 right-0 bg-black/70 p-2 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                        <p class="text-white text-sm text-center">${p.caption}</p>
+                    </div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="fade-in">
+                    <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white py-16 px-4 text-center">
+                        <h1 class="text-3xl md:text-5xl font-bold mb-4">${labData.info.name}</h1>
+                        <h2 class="text-xl md:text-2xl text-blue-300 font-light mb-6">${labData.info.englishName}</h2>
+                        <p class="max-w-3xl mx-auto text-gray-300 text-lg">${labData.info.description}</p>
+                    </div>
+                    <div class="max-w-6xl mx-auto px-4 py-12 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div class="lg:col-span-2 space-y-8">
+                            <div>
+                                <div class="flex items-center gap-2 mb-4 border-b-2 border-blue-600 pb-2">
+                                    <i data-lucide="image" class="text-blue-600"></i>
+                                    <h3 class="text-2xl font-bold text-slate-800">實驗室活動</h3>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${photosHTML || '暫無照片'}</div>
+                            </div>
+                             <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100 flex flex-col md:flex-row gap-6 items-center md:items-start">
+                                <img src="${labData.professor.image}" class="w-32 h-32 rounded-full object-cover shadow-lg border-4 border-white bg-gray-200">
+                                <div>
+                                    <h3 class="text-xl font-bold mb-2">主持人：${labData.professor.name}</h3>
+                                    <p class="text-gray-600 mb-4">歡迎來到我們的實驗室。我們專注於最新的熱流技術研究。</p>
+                                    <button onclick="renderPage('professor')" class="text-blue-600 font-medium hover:underline flex items-center gap-1">查看簡介 <i data-lucide="chevron-right" class="w-4"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lg:col-span-1">
+                            <div class="bg-white p-6 rounded-lg shadow-md border-t-4 border-blue-600 sticky top-20">
+                                <div class="flex items-center gap-2 mb-6"><i data-lucide="award" class="text-blue-600"></i><h3 class="text-xl font-bold">最新消息</h3></div>
+                                <div class="space-y-4">${newsHTML}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- 教授簡介 ---
+        function renderProfessor() {
+            const eduHTML = (labData.education || []).map(e => `<li class="flex justify-between border-b pb-2"><span class="font-medium">${e.degree}</span><span class="text-gray-500 text-sm">${e.school} (${e.year})</span></li>`).join('');
+            const expMainHTML = (labData.experience_main || []).map(e => `<li class="mb-4"><span class="block text-sm text-gray-400 font-mono">${e.period}</span><h4 class="font-bold">${e.org}</h4><p class="text-gray-600">${e.title}</p></li>`).join('');
+            const honorsHTML = (labData.honors || []).map(h => `<li class="flex gap-3"><span class="text-blue-600 font-bold min-w-[3rem]">${h.year}</span><span>${h.title}</span></li>`).join('');
+
+            return `
+                <div class="max-w-5xl mx-auto px-4 py-12 fade-in">
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-10 md:flex">
+                        <div class="md:w-1/3 bg-slate-50 p-8 flex flex-col items-center text-center border-r">
+                            <div class="w-48 h-48 rounded-full overflow-hidden mb-6 shadow-xl border-4 border-white"><img src="${labData.professor.image}" class="w-full h-full object-cover"></div>
+                            <h2 class="text-2xl font-bold">${labData.professor.name}</h2>
+                            <p class="text-blue-600 font-medium mb-4">${labData.professor.title}</p>
+                            <div class="text-left text-sm text-gray-600 space-y-2 w-full">
+                                <p><i data-lucide="map-pin" class="inline w-4"></i> ${labData.info.location}</p>
+                                <p><i data-lucide="mail" class="inline w-4"></i> ${labData.info.email}</p>
+                            </div>
+                        </div>
+                        <div class="md:w-2/3 p-8">
+                            <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="graduation-cap"></i> 學歷</h3>
+                            <ul class="space-y-3 mb-8">${eduHTML}</ul>
+                            <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="award"></i> 榮譽</h3>
+                            <ul class="space-y-2">${honorsHTML}</ul>
+                        </div>
+                    </div>
+                    <div class="bg-white p-8 rounded-lg shadow-md">
+                        <h3 class="text-xl font-bold mb-6 border-l-4 border-blue-600 pl-3">經歷</h3>
+                        <ul class="pl-4 border-l border-gray-200">${expMainHTML}</ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- 研究成果 ---
+        function renderResearch(activeTab) {
+            // 定義 Tab UI
+            const tabs = [
+                { id: 'projects', label: '研究計畫', icon: 'file-text' },
+                { id: 'patents', label: '專利', icon: 'award' },
+                { id: 'conf_intl', label: '國際研討會', icon: 'globe' },
+                { id: 'conf_dom', label: '國內研討會', icon: 'users' }
+            ];
+
+            const tabsHTML = tabs.map(t => `
+                <button onclick="renderResearch('${t.id}')" class="flex items-center gap-2 px-6 py-2 rounded-full font-medium transition-all ${activeTab === t.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-gray-600 border border-gray-200'}">
+                    <i data-lucide="${t.icon}" class="w-4"></i> ${t.label}
+                </button>
+            `).join('');
+
+            let contentHTML = '';
+
+            if (activeTab === 'projects') {
+                contentHTML = `<div class="overflow-x-auto"><table class="w-full text-left">
+                    <thead class="bg-gray-50 text-gray-600 text-sm"><tr><th class="p-4">執行期限</th><th class="p-4">計畫名稱</th><th class="p-4">委託單位</th><th class="p-4">職務</th></tr></thead>
+                    <tbody class="divide-y divide-gray-100">
+                        ${(labData.projects || []).map(p => `<tr><td class="p-4 text-blue-600 font-bold whitespace-nowrap">${p.year}</td><td class="p-4 font-medium">${p.title}</td><td class="p-4 text-gray-500">${p.agency}</td><td class="p-4"><span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">${p.role}</span></td></tr>`).join('')}
+                    </tbody></table></div>`;
+            } else if (activeTab === 'patents') {
+                contentHTML = `<div class="grid md:grid-cols-2 gap-6">
+                    ${(labData.patents || []).map(p => `<div class="border p-4 rounded-lg flex gap-4 items-start"><div class="bg-purple-100 p-3 rounded-full text-purple-600"><i data-lucide="award"></i></div><div><span class="text-xs font-bold text-gray-400 uppercase">${p.region}</span><h3 class="font-bold text-lg">${p.title}</h3><p class="text-sm font-mono text-gray-500">No: ${p.number}</p></div></div>`).join('')}
+                </div>`;
+            } else { // 研討會
+                const data = activeTab === 'conf_intl' ? labData.conference_intl : labData.conference_dom;
+                const color = activeTab === 'conf_intl' ? 'text-blue-200' : 'text-green-200';
+                contentHTML = `<div class="space-y-4">
+                    ${(data || []).map(c => `<div class="flex gap-4 p-4 border-b hover:bg-gray-50"><div class="font-bold text-2xl ${color}">${c.year}</div><div><h4 class="text-lg font-bold">${c.title}</h4><div class="flex gap-4 text-sm text-gray-500 mt-1"><span><i data-lucide="book-open" class="inline w-3"></i> ${c.conference}</span><span><i data-lucide="map-pin" class="inline w-3"></i> ${c.location}</span></div></div></div>`).join('')}
+                </div>`;
+            }
+
+            // 更新 DOM
+            const container = document.getElementById('app-container');
+            container.innerHTML = `
+                <div class="max-w-6xl mx-auto px-4 py-12 fade-in">
+                    <div class="text-center mb-10"><h2 class="text-3xl font-bold mb-3">研究成果</h2><div class="flex flex-wrap justify-center gap-2">${tabsHTML}</div></div>
+                    <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-6 md:p-8 min-h-[400px]">${contentHTML}</div>
+                </div>
+            `;
+            lucide.createIcons();
+            window.scrollTo(0, 0);
+            
+            // 由於 renderResearch 替換了整個容器，這裡需要一個特殊處理，
+            // 若是在 Home 以外的函數內部呼叫 render，不需要重新綁定全域 HTML
+        }
+
+        // 啟動！
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
