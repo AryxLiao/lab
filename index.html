@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>實驗室網頁讀取中...</title>
+    <title>能源與流體應用實驗室</title>
     
     <!-- 1. CSS 框架 (Tailwind) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,7 +14,6 @@
     <style>
         .fade-in { animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        /* 隱藏卷軸 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -25,10 +24,15 @@
     <nav class="bg-slate-900 text-white shadow-lg sticky top-0 z-50">
         <div class="max-w-6xl mx-auto px-4">
             <div class="flex justify-between items-center h-16">
-                <!-- LOGO -->
-                <div class="font-bold text-xl cursor-pointer flex items-center gap-2" onclick="renderPage('home')">
-                    <i data-lucide="flask-conical" class="text-blue-400"></i>
-                    <span id="nav-lab-name" class="hidden sm:block">載入中...</span>
+                <!-- LOGO 區塊 -->
+                <div class="font-bold text-xl cursor-pointer flex items-center gap-3" onclick="renderPage('home')">
+                    <!-- Logo 圖片 (預設隱藏，載入後顯示) -->
+                    <img id="nav-logo" class="h-8 w-8 object-contain hidden" alt="Logo">
+                    <i id="nav-icon" data-lucide="flask-conical" class="text-blue-400"></i>
+                    
+                    <div class="flex flex-col leading-tight">
+                        <span id="nav-lab-name" class="hidden sm:block">載入中...</span>
+                    </div>
                     <span class="sm:hidden">Lab</span>
                 </div>
                 <!-- 電腦版選單 -->
@@ -55,7 +59,7 @@
     <main id="app-container" class="flex-grow min-h-[60vh] flex flex-col items-center justify-center">
         <div class="text-center">
             <div class="animate-spin w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p class="text-gray-600">系統初始化中...</p>
+            <p class="text-gray-600">資料讀取中...</p>
         </div>
     </main>
 
@@ -70,23 +74,46 @@
 
     <!-- 邏輯腳本 -->
     <script>
-        // 設定 CSV 路徑 (新增了 competitions)
+        // 設定 CSV 路徑
         const FILES = {
-            info: 'data/info.csv',
+            info: 'data/info.csv',                     // 包含 YouTube ID, Logo檔名, 實驗室位置
             professor: 'data/professor.csv',
             education: 'data/education.csv',
             experience_main: 'data/experience_main.csv',
             experience_related: 'data/experience_related.csv',
+            research_interests: 'data/research_interests.csv', // 新增：研究領域
+            courses: 'data/courses.csv',                       // 新增：教學課程
             honors: 'data/honors.csv',
             patents: 'data/patents.csv',
             conference_intl: 'data/conference_intl.csv',
             conference_dom: 'data/conference_dom.csv',
             projects: 'data/projects.csv',
-            competitions: 'data/competitions.csv', // 新增：競賽資料
+            competitions: 'data/competitions.csv',
             activity_photos: 'data/activity_photos.csv'
         };
 
-        let db = {}; // 儲存所有資料
+        // 預設資料 (若 CSV 讀取失敗，將顯示這些內容，防止網頁掛掉)
+        const DEFAULT_DB = {
+            info: { 
+                name: "能源與流體應用實驗室", 
+                englishName: "Laboratory Name", 
+                description: "資料讀取中，請稍候...", 
+                office_location: "辦公室位置", 
+                lab_location_name: "實驗室名稱", 
+                lab_location_address: "實驗室地址",
+                email: "email@example.com", 
+                phone: "0912-345-678",
+                youtube_id: "",
+                logo_filename: ""
+            },
+            professor: { name: "教授姓名", title: "職稱", image_filename: "" },
+            education: [], experience_main: [], experience_related: [],
+            research_interests: [], courses: [],
+            honors: [], patents: [], conference_intl: [], conference_dom: [], projects: [], competitions: [],
+            activity_photos: []
+        };
+
+        let db = JSON.parse(JSON.stringify(DEFAULT_DB)); // 深拷貝預設值
 
         // CSV 解析器
         function parseCSV(text) {
@@ -103,59 +130,57 @@
 
         // 初始化
         async function init() {
-            const errors = [];
             const promises = Object.entries(FILES).map(async ([key, path]) => {
                 try {
-                    const res = await fetch(path + '?t=' + Date.now()); // 加時間戳防止快取
-                    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                    const res = await fetch(path + '?t=' + Date.now());
+                    if (!res.ok) throw new Error(`Missing ${path}`);
                     const text = await res.text();
                     const data = parseCSV(text);
-                    // info 和 professor 取單筆，其他取陣列
-                    db[key] = (key === 'info' || key === 'professor') ? (data[0] || {}) : data;
+                    
+                    // 單筆資料 vs 陣列資料
+                    if (key === 'info' || key === 'professor') {
+                        // 合併物件，保留預設值中沒被覆蓋的欄位
+                        db[key] = { ...db[key], ...(data[0] || {}) };
+                    } else {
+                        db[key] = data;
+                    }
                 } catch (e) {
-                    console.error(`Error loading ${key}:`, e);
-                    // 若非必要檔案可忽略，但為了除錯先保留記錄
-                    if (key !== 'competitions') errors.push(`${path} (${e.message})`);
-                    db[key] = (key === 'info' || key === 'professor') ? {} : [];
+                    console.warn(`[Load Error] ${key} failed to load. Using default data.`);
+                    // 這裡不阻擋流程，繼續執行，讓使用者至少能看到部分正確的內容
                 }
             });
 
             await Promise.all(promises);
 
-            if (errors.length > 0) {
-                document.getElementById('app-container').innerHTML = `
-                    <div class="max-w-2xl mx-auto bg-red-50 p-6 rounded-lg border border-red-200 mt-10">
-                        <h3 class="text-red-700 font-bold text-xl mb-2">資料讀取發生錯誤</h3>
-                        <p class="text-sm text-red-600 mb-4">請確認 data/ 資料夾內是否有以下檔案：</p>
-                        <ul class="list-disc pl-5 text-sm text-red-800 font-mono space-y-1">
-                            ${errors.map(e => `<li>${e}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-                return;
-            }
+            // 資料路徑處理
+            if(db.professor.image_filename) db.professor.image = `photos/prof/${db.professor.image_filename}`;
+            else db.professor.image = 'https://placehold.co/400x400?text=Prof';
 
-            // 資料後處理
-            if(db.professor) db.professor.image = db.professor.image_filename ? `photos/prof/${db.professor.image_filename}` : '';
             if(db.activity_photos) db.activity_photos.forEach(p => p.url = `photos/activity/${p.filename}`);
+            
+            // Logo 處理
+            if(db.info.logo_filename) {
+                const logoPath = `photos/${db.info.logo_filename}`;
+                const navLogo = document.getElementById('nav-logo');
+                navLogo.src = logoPath;
+                navLogo.classList.remove('hidden');
+                document.getElementById('nav-icon').classList.add('hidden'); // 有 Logo 就隱藏預設 icon
+            }
 
             updateGlobalUI();
             renderPage('home');
         }
 
         function updateGlobalUI() {
-            const name = db.info.name || "未命名實驗室";
+            const name = db.info.name;
             document.title = name;
             document.getElementById('nav-lab-name').innerText = name;
             document.getElementById('footer-name').innerText = name;
-            document.getElementById('footer-loc').innerText = `${db.info.location} | ${db.info.phone}`;
+            document.getElementById('footer-loc').innerText = `${db.info.office_location} | ${db.info.phone}`;
         }
 
-        // 頁面渲染
         window.renderPage = function(page) {
             const app = document.getElementById('app-container');
-            
-            // 更新選單狀態
             document.querySelectorAll('.nav-btn').forEach(b => {
                 if(b.dataset.page === page) b.classList.add('text-blue-400', 'font-bold');
                 else b.classList.remove('text-blue-400', 'font-bold');
@@ -174,17 +199,16 @@
         // --- HTML 生成區 ---
 
         function renderHome() {
-            // 合併所有消息
             const news = [
                 ...(db.honors||[]).map(x=>({...x, tag:'榮譽', color:'text-yellow-600 bg-yellow-50'})),
-                ...(db.competitions||[]).map(x=>({...x, tag:'競賽', color:'text-red-600 bg-red-50'})), // 加入競賽到首頁消息
+                ...(db.competitions||[]).map(x=>({...x, tag:'競賽', color:'text-red-600 bg-red-50'})),
                 ...(db.patents||[]).map(x=>({...x, tag:'專利', color:'text-purple-600 bg-purple-50'})),
                 ...(db.projects||[]).map(x=>({...x, tag:'計畫', color:'text-green-600 bg-green-50'})),
                 ...(db.conference_intl||[]).map(x=>({...x, tag:'國際會議', color:'text-blue-600 bg-blue-50'}))
             ].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
 
             const photos = (db.activity_photos||[]).map(p => `
-                <div class="relative group overflow-hidden rounded-xl shadow-md aspect-video">
+                <div class="relative group overflow-hidden rounded-xl shadow-md aspect-video bg-gray-200">
                     <img src="${p.url}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" onerror="this.src='https://placehold.co/600x400?text=No+Image'">
                     <div class="absolute bottom-0 inset-x-0 bg-black/60 text-white p-2 text-sm translate-y-full group-hover:translate-y-0 transition">
                         ${p.caption}
@@ -192,29 +216,50 @@
                 </div>
             `).join('');
 
+            // Logo 與 Title 區塊
+            const heroLogo = db.info.logo_filename 
+                ? `<img src="photos/${db.info.logo_filename}" class="h-16 w-16 md:h-20 md:w-20 object-contain bg-white rounded-full p-1 shadow-lg">`
+                : '';
+
+            // YouTube 區塊
+            let youtubeHTML = '';
+            if (db.info.youtube_id) {
+                youtubeHTML = `
+                <div class="mb-8">
+                     <h3 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="youtube" class="text-red-600"></i> 實驗室介紹影片</h3>
+                     <div class="w-full rounded-xl overflow-hidden shadow-lg aspect-video">
+                        <iframe class="w-full h-full" src="https://www.youtube.com/embed/${db.info.youtube_id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+                     </div>
+                </div>`;
+            }
+
             return `
                 <div class="fade-in">
                     <div class="bg-gradient-to-r from-slate-800 to-blue-900 text-white py-20 px-4 text-center">
-                        <h1 class="text-4xl font-bold mb-2">${db.info.name}</h1>
+                        <div class="flex justify-center items-center gap-4 mb-4">
+                            ${heroLogo}
+                            <h1 class="text-4xl font-bold">${db.info.name}</h1>
+                        </div>
                         <h2 class="text-xl text-blue-200 font-light mb-6">${db.info.englishName}</h2>
                         <p class="max-w-2xl mx-auto text-gray-300">${db.info.description}</p>
                     </div>
                     <div class="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
                         
-                        <!-- 左側欄位 -->
                         <div class="lg:col-span-2 space-y-8">
-                            
-                            <!-- 1. 主持人簡介 (已移至最上方) -->
+                            <!-- 1. 主持人簡介 -->
                             <div class="bg-white p-6 rounded-xl shadow border border-gray-100 flex gap-6 items-center">
                                 <img src="${db.professor.image}" class="w-24 h-24 rounded-full object-cover border-4 border-gray-100" onerror="this.src='https://placehold.co/200?text=Prof'">
                                 <div>
                                     <h3 class="font-bold text-lg">主持人：${db.professor.name}</h3>
-                                    <p class="text-gray-600 text-sm mb-2">歡迎來到我們的實驗室，我們專注於最新的熱流技術研究。</p>
-                                    <button onclick="renderPage('professor')" class="text-blue-600 text-sm hover:underline flex items-center gap-1">查看詳細簡介 <i data-lucide="arrow-right" class="w-3"></i></button>
+                                    <p class="text-gray-600 text-sm mb-2">歡迎來到我們的實驗室。</p>
+                                    <button onclick="renderPage('professor')" class="text-blue-600 text-sm hover:underline flex items-center gap-1">詳細簡介 <i data-lucide="arrow-right" class="w-3"></i></button>
                                 </div>
                             </div>
 
-                            <!-- 2. 活動剪影 (移至主持人下方) -->
+                            <!-- 2. YouTube 影片 (新增位置) -->
+                            ${youtubeHTML}
+
+                            <!-- 3. 活動剪影 -->
                             <div>
                                 <h3 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="image"></i> 活動剪影</h3>
                                 <div class="grid md:grid-cols-2 gap-4">${photos || '<div class="p-4 bg-gray-100 rounded text-gray-500">尚無照片</div>'}</div>
@@ -251,22 +296,49 @@
                             <img src="${db.professor.image}" class="w-40 h-40 rounded-full object-cover mb-4 shadow-md bg-white" onerror="this.src='https://placehold.co/200?text=Prof'">
                             <h2 class="text-2xl font-bold">${db.professor.name}</h2>
                             <p class="text-blue-600 font-medium mb-4">${db.professor.title}</p>
-                            <div class="text-sm text-gray-600 space-y-2 text-left w-full pl-4">
-                                <div><i data-lucide="map-pin" class="w-3 inline"></i> ${db.info.location}</div>
-                                <div><i data-lucide="mail" class="w-3 inline"></i> ${db.info.email}</div>
+                            
+                            <!-- 聯絡資訊區 (包含新增的實驗室位置) -->
+                            <div class="text-sm text-gray-600 space-y-3 text-left w-full pl-2">
+                                <div class="flex gap-2">
+                                    <i data-lucide="map-pin" class="w-4 shrink-0 mt-0.5 text-blue-500"></i> 
+                                    <div>
+                                        <div class="font-bold text-gray-700">辦公室</div>
+                                        ${db.info.office_location}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <i data-lucide="flask-conical" class="w-4 shrink-0 mt-0.5 text-blue-500"></i> 
+                                    <div>
+                                        <div class="font-bold text-gray-700">實驗室 (${db.info.lab_location_name})</div>
+                                        ${db.info.lab_location_address}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 items-center"><i data-lucide="mail" class="w-4 text-blue-500"></i> <span class="break-all">${db.info.email}</span></div>
+                                <div class="flex gap-2 items-center"><i data-lucide="phone" class="w-4 text-blue-500"></i> ${db.info.phone}</div>
                             </div>
                         </div>
                         <div class="md:w-2/3 p-8">
-                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="graduation-cap" class="text-blue-600"></i> 學歷</h3>
+                            <!-- 學歷 -->
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2 border-b pb-2"><i data-lucide="graduation-cap" class="text-blue-600"></i> 學歷</h3>
                             <ul class="space-y-3 mb-8">
-                                ${(db.education||[]).map(e => `<li class="flex justify-between border-b pb-2"><span class="font-medium">${e.degree}</span><span class="text-gray-500 text-sm">${e.school} (${e.year})</span></li>`).join('')}
+                                ${(db.education||[]).map(e => `<li class="flex justify-between"><span class="font-medium">${e.degree}</span><span class="text-gray-500 text-sm">${e.school} (${e.year})</span></li>`).join('')}
                             </ul>
-                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="award" class="text-blue-600"></i> 榮譽</h3>
-                            <ul class="space-y-2 list-disc pl-5 text-gray-700">
-                                ${(db.honors||[]).map(h => `<li><span class="font-bold text-blue-800">${h.year}</span> ${h.title}</li>`).join('')}
+                            
+                            <!-- 研究領域 (新增) -->
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2 border-b pb-2"><i data-lucide="microscope" class="text-blue-600"></i> 研究領域</h3>
+                            <div class="flex flex-wrap gap-2 mb-8">
+                                ${(db.research_interests||[]).map(r => `<span class="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium border border-blue-100">${r.topic}</span>`).join('') || '<span class="text-gray-400 text-sm">暫無資料</span>'}
+                            </div>
+
+                            <!-- 授課課程 (新增) -->
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2 border-b pb-2"><i data-lucide="book-open" class="text-blue-600"></i> 授課課程</h3>
+                            <ul class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-8">
+                                ${(db.courses||[]).map(c => `<li class="flex items-center gap-2 text-sm text-gray-700"><div class="w-1.5 h-1.5 rounded-full bg-blue-400"></div> ${c.course_name}</li>`).join('') || '<li class="text-gray-400 text-sm">暫無資料</li>'}
                             </ul>
                         </div>
                     </div>
+
+                    <!-- 經歷與榮譽 -->
                     <div class="grid md:grid-cols-2 gap-6">
                         <div class="bg-white p-6 rounded-xl shadow border border-gray-100">
                             <h3 class="font-bold mb-4 border-l-4 border-blue-600 pl-3">主要經歷</h3>
@@ -275,9 +347,9 @@
                             </ul>
                         </div>
                         <div class="bg-white p-6 rounded-xl shadow border border-gray-100">
-                            <h3 class="font-bold mb-4 border-l-4 border-green-600 pl-3">相關經歷</h3>
-                            <ul class="space-y-2 text-sm text-gray-700">
-                                ${(db.experience_related||[]).map(e => `<li class="flex justify-between"><span>${e.title}</span><span class="text-gray-400">${e.org}</span></li>`).join('')}
+                             <h3 class="font-bold mb-4 border-l-4 border-yellow-500 pl-3">榮譽與獎項</h3>
+                             <ul class="space-y-2 list-disc pl-5 text-gray-700 text-sm">
+                                ${(db.honors||[]).map(h => `<li><span class="font-bold text-slate-800">${h.year}</span> ${h.title}</li>`).join('')}
                             </ul>
                         </div>
                     </div>
@@ -324,26 +396,19 @@
                         </table>
                     </div>`;
             } else if (tab === 'competitions') {
-                // 新增：競賽顯示邏輯
                 return `
                     <div class="space-y-4">
                         ${(db.competitions||[]).map(c => `
                             <div class="flex gap-4 p-4 border rounded-lg bg-gray-50 hover:shadow-md transition">
-                                <div class="bg-red-100 text-red-600 p-3 rounded-full h-12 w-12 flex items-center justify-center flex-shrink-0">
-                                    <i data-lucide="trophy"></i>
-                                </div>
+                                <div class="bg-red-100 text-red-600 p-3 rounded-full h-12 w-12 flex items-center justify-center flex-shrink-0"><i data-lucide="trophy"></i></div>
                                 <div class="flex-1">
-                                    <div class="flex justify-between items-start">
-                                        <h4 class="font-bold text-lg text-slate-800">${c.title}</h4>
-                                        <span class="text-sm font-mono text-gray-500">${c.year}</span>
-                                    </div>
+                                    <div class="flex justify-between items-start"><h4 class="font-bold text-lg text-slate-800">${c.title}</h4><span class="text-sm font-mono text-gray-500">${c.year}</span></div>
                                     <div class="text-red-600 font-bold my-1"><i data-lucide="medal" class="inline w-4"></i> ${c.award}</div>
                                     <div class="text-sm text-gray-500">主辦單位：${c.organizer}</div>
                                 </div>
                             </div>
                         `).join('') || '<div class="text-center text-gray-500">尚無競賽資料</div>'}
-                    </div>
-                `;
+                    </div>`;
             } else if (tab === 'patents') {
                 return `<div class="grid md:grid-cols-2 gap-4">${(db.patents||[]).map(p=>`<div class="border p-4 rounded flex gap-3 items-start"><div class="bg-purple-100 text-purple-600 p-2 rounded-full"><i data-lucide="award"></i></div><div><div class="text-xs font-bold text-gray-400">${p.region}</div><div class="font-bold text-lg">${p.title}</div><div class="text-sm font-mono text-gray-500">No: ${p.number}</div></div></div>`).join('')}</div>`;
             } else {
